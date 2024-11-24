@@ -21,13 +21,8 @@ while True:
     episode = episodeChoices[random.randint(0, len(episodeChoices)-1)]
 
     fileLength = get_length(episode)
+    print(fileLength)
     vlcPath = "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe"
-    os.execv(vlcPath, [" ", '"' + episode + '"'])
-    # print(fileLength)
+    os.execv(vlcPath, [" ", '"' + episode + '"', "--fullscreen", "--sub-track 10"])
     sleep(fileLength+5)
-    # media_player = vlc.MediaPlayer(episode)
-    # media_player.play()
-    # sleep(5)
-    # while media_player.is_playing():
-         # sleep(1)
-    # media_player.release()
+    
