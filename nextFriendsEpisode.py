@@ -21,8 +21,7 @@ while True:
     episode = episodeChoices[random.randint(0, len(episodeChoices)-1)]
 
     fileLength = get_length(episode)
-    print(fileLength)
     vlcPath = "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe"
-    os.execv(vlcPath, [" ", '"' + episode + '"', "--fullscreen", "--sub-track 10"])
+    p = subprocess.Popen([vlcPath, episode, "--fullscreen", "--sub-track", "10"])
     sleep(fileLength+5)
-    
+    p.kill()
