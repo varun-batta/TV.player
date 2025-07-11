@@ -1,34 +1,71 @@
 import random
 import os
 import subprocess
-import vlc
 import re
 import json
+import sys
 from time import sleep
 
-def get_episode():
+def get_episode(random_mode=False):
     # Opening up episodeCount JSON to make sure no repetitions happen
-    episodeInfo = {}
     with open('episodeCount.json') as f:
         episodeInfo = json.load(f)
         f.close()
-    while True:
-        # Generating a random season and episode
-        season = random.randint(1, 10)
-        seasonPath = "C:\\Users\\varun\\Videos\\F.R.I.E.N.D.S\\Season {}".format(season)
-        episodeChoices = ["\\".join((seasonPath, f)) for f in os.listdir(seasonPath) if os.path.isfile("\\".join((seasonPath, f)))]
-        episode = episodeChoices[random.randint(0, len(episodeChoices)-1)]
-        # Making sure it's not repeating by using the JSON
-        episodeCount = episodeInfo['F.R.I.E.N.D.S.']['episodeCount']
-        totalEpisodeCount = episodeInfo['F.R.I.E.N.D.S.']['totalEpisodeCount']
-        expectedCount = episodeCount // totalEpisodeCount
-        episodeNameRegex = re.compile(r".*Season \d+\\(\d+[.]\d+(?:-\d+[.]\d+)?)")
-        print(episode)
-        episodeNumber = episodeNameRegex.match(episode)[1]
-        if episodeInfo['F.R.I.E.N.D.S.']['episodes'][episodeNumber] == expectedCount:
-            episodeInfo['F.R.I.E.N.D.S.']['episodeCount'] += 1
-            episodeInfo['F.R.I.E.N.D.S.']['episodes'][episodeNumber] += 1
-            break
+
+    episodes_dict = episodeInfo['F.R.I.E.N.D.S.']['episodes']
+    episode_keys = list(episodes_dict.keys())
+
+    # Ensure lastPlayed exists
+    if 'lastPlayed' not in episodeInfo['F.R.I.E.N.D.S.']:
+        episodeInfo['F.R.I.E.N.D.S.']['lastPlayed'] = None
+
+    if random_mode:
+        # --- RANDOM MODE (existing logic) ---
+        while True:
+            season = random.randint(1, 10)
+            seasonPath = f"C:\\Users\\varun\\Videos\\F.R.I.E.N.D.S\\Season {season}"
+            episodeChoices = ["\\".join((seasonPath, f)) for f in os.listdir(seasonPath) if os.path.isfile("\\".join((seasonPath, f)))]
+            episode = episodeChoices[random.randint(0, len(episodeChoices)-1)]
+            episodeNameRegex = re.compile(r".*Season \d+\\(\d+[.]\d+(?:-\d+[.]\d+)?)")
+            match = episodeNameRegex.match(episode)
+            if not match:
+                continue
+            episodeNumber = match[1]
+            episodeCount = episodeInfo['F.R.I.E.N.D.S.']['episodeCount']
+            totalEpisodeCount = episodeInfo['F.R.I.E.N.D.S.']['totalEpisodeCount']
+            expectedCount = episodeCount // totalEpisodeCount
+            if episodes_dict[episodeNumber] == expectedCount:
+                episodeInfo['F.R.I.E.N.D.S.']['episodeCount'] += 1
+                episodes_dict[episodeNumber] += 1
+                episodeInfo['F.R.I.E.N.D.S.']['lastPlayed'] = episodeNumber
+                break
+    else:
+        # --- IN ORDER MODE ---
+        last_played = episodeInfo['F.R.I.E.N.D.S.']['lastPlayed']
+        try:
+            idx = episode_keys.index(last_played) if last_played else -1
+        except ValueError:
+            idx = -1
+        next_idx = idx + 1
+        if next_idx >= len(episode_keys):
+            print("All episodes played!")
+            sys.exit(0)
+        next_episode_number = episode_keys[next_idx]
+        # Find the file for this episode
+        season_num = next_episode_number.split('.')[0]
+        seasonPath = f"C:\\Users\\varun\\Videos\\F.R.I.E.N.D.S\\Season {season_num}"
+        # Find file that starts with the episode number
+        episode_file = None
+        for f in os.listdir(seasonPath):
+            if f.startswith(next_episode_number):
+                episode_file = "\\".join((seasonPath, f))
+                break
+        if not episode_file:
+            print(f"Episode file for {next_episode_number} not found in {seasonPath}")
+            sys.exit(1)
+        episode = episode_file
+        episodeInfo['F.R.I.E.N.D.S.']['lastPlayed'] = next_episode_number
+
     # Updating episodeCount JSON
     updatedEpisodeCountJSON = json.dumps(episodeInfo, indent=4)
     with open('episodeCount.json', 'w') as f:
@@ -44,11 +81,13 @@ def get_length(filename):
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT)
     return float(result.stdout)
-    
-while True:
-    episode = get_episode()
-    fileLength = get_length(episode)
-    vlcPath = "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe"
-    p = subprocess.Popen([vlcPath, episode, "--fullscreen", "--sub-track", "10"])
-    sleep(fileLength+5)
-    p.kill()
+
+if __name__ == "__main__":
+    random_mode = "--random" in sys.argv or "-r" in sys.argv
+    while True:
+        episode = get_episode(random_mode=random_mode)
+        fileLength = get_length(episode)
+        vlcPath = "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe"
+        p = subprocess.Popen([vlcPath, episode, "--fullscreen", "--sub-track", "10"])
+        sleep(fileLength+5)
+        p.kill()
