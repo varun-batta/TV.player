@@ -84,10 +84,23 @@ def get_length(filename):
 
 if __name__ == "__main__":
     random_mode = "--random" in sys.argv or "-r" in sys.argv
-    while True:
+
+    # Default to infinite loop if -n not provided
+    num_episodes = None
+    for i, arg in enumerate(sys.argv):
+        if arg == "-n" and i + 1 < len(sys.argv):
+            try:
+                num_episodes = int(sys.argv[i + 1])
+            except ValueError:
+                print("Invalid value for -n. Please provide an integer.")
+                sys.exit(1)
+
+    count = 0
+    while num_episodes is None or count < num_episodes:
         episode = get_episode(random_mode=random_mode)
         fileLength = get_length(episode)
         vlcPath = "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe"
         p = subprocess.Popen([vlcPath, episode, "--fullscreen", "--sub-track", "10"])
-        sleep(fileLength+5)
+        sleep(fileLength + 5)
         p.kill()
+        count += 1
