@@ -12,6 +12,17 @@ import argparse
 import keyboard
 import pygetwindow as gw
 
+def get_available_seasons(show):
+    with open('episodeCount.json') as f:
+        episodeInfo = json.load(f)
+
+    if show not in episodeInfo:
+        return []
+
+    episode_keys = list(episodeInfo[show]['episodes'].keys())
+    seasons = sorted({int(k.split('.')[0]) for k in episode_keys})
+    return seasons
+
 def get_episode(show='F.R.I.E.N.D.S.', random_mode=False):
     # Opening up episodeCount JSON to make sure no repetitions happen
     with open('episodeCount.json') as f:
@@ -80,6 +91,53 @@ def get_episode(show='F.R.I.E.N.D.S.', random_mode=False):
         f.close()
     return episode
 
+def set_start_from_season(show, start_season, num_episodes=None):
+    """
+    Seed lastPlayed so the next in-order episode starts from a random episode
+    in the selected season (never the season's last episode).
+    """
+    with open('episodeCount.json') as f:
+        episodeInfo = json.load(f)
+
+    if show not in episodeInfo:
+        print(f"Show '{show}' not found in episodeCount.json")
+        sys.exit(1)
+
+    episodes_dict = episodeInfo[show]['episodes']
+    episode_keys = list(episodes_dict.keys())
+    season_prefix = f"{start_season}."
+    season_episode_keys = [k for k in episode_keys if k.startswith(season_prefix)]
+
+    if not season_episode_keys:
+        print(f"Season {start_season} not found for show '{show}'")
+        sys.exit(1)
+
+    # Keep the full requested run inside the chosen season and never start on season finale.
+    requested_count = 1 if num_episodes is None else num_episodes
+    max_start_by_count = len(season_episode_keys) - requested_count
+    max_start_by_not_last = len(season_episode_keys) - 2
+    max_start_idx = min(max_start_by_count, max_start_by_not_last)
+
+    if max_start_idx < 0:
+        print(
+            f"Cannot start in Season {start_season} with --num-episodes={num_episodes}. "
+            f"Season has {len(season_episode_keys)} episodes and start cannot be the last one."
+        )
+        sys.exit(1)
+
+    chosen_idx = random.randint(0, max_start_idx)
+    chosen_episode = season_episode_keys[chosen_idx]
+    global_idx = episode_keys.index(chosen_episode)
+    episodeInfo[show]['lastPlayed'] = episode_keys[global_idx - 1] if global_idx > 0 else None
+
+    with open('episodeCount.json', 'w') as f:
+        f.write(json.dumps(episodeInfo, indent=4))
+
+    print(
+        f"Start season set to {start_season}. "
+        f"Starting episode will be {chosen_episode}."
+    )
+
 def get_length(filename):
     print(filename)
     result = subprocess.run(["ffprobe", "-v", "error", "-show_entries",
@@ -117,11 +175,13 @@ def is_vlc_playing():
 def parse_args():
     parser = argparse.ArgumentParser(description='TV Show Player')
     parser.add_argument('-r', '--random', action='store_true',
-                      help='Play episodes in random order')
+                      help='Play random order (or random first episode only when --num-episodes > 1)')
     parser.add_argument('-n', '--num-episodes', type=int,
                       help='Number of episodes to play (default: infinite)')
     parser.add_argument('-s', '--show', type=str, default='F.R.I.E.N.D.S.',
                       help='TV show to play (default: F.R.I.E.N.D.S.)')
+    parser.add_argument('-S', '--start-season', type=int,
+                      help='Start from a random episode in this season, then continue in order')
     return parser.parse_args()
 
 if __name__ == "__main__":
@@ -129,12 +189,37 @@ if __name__ == "__main__":
     args = parse_args()
     print(f"Random mode: {args.random}, Show: {args.show}")
 
+    if args.num_episodes is not None and args.num_episodes <= 0:
+        print("--num-episodes must be greater than 0")
+        sys.exit(1)
+
+    if args.start_season is not None:
+        available_seasons = get_available_seasons(args.show)
+        if not available_seasons:
+            print(f"Show '{args.show}' not found in episodeCount.json")
+            sys.exit(1)
+        if args.start_season not in available_seasons:
+            seasons_str = ", ".join(str(s) for s in available_seasons)
+            print(
+                f"Invalid --start-season {args.start_season} for show '{args.show}'. "
+                f"Valid seasons: {seasons_str}"
+            )
+            sys.exit(1)
+        set_start_from_season(args.show, args.start_season, args.num_episodes)
+
     count = 0
     quit_flag = False
     print(f"Episodes to play: {'infinite' if args.num_episodes is None else args.num_episodes}")
     while (args.num_episodes is None or count < args.num_episodes) and not quit_flag:
         print(f"Playing episode {count + 1}...")
-        episode = get_episode(show=args.show, random_mode=args.random)
+        # Hybrid behavior: with -r and -n > 1, first episode is random, then continue in order.
+        use_random_mode = args.random
+        if args.start_season is not None:
+            use_random_mode = False
+        elif args.random and args.num_episodes is not None and args.num_episodes > 1:
+            use_random_mode = count == 0
+
+        episode = get_episode(show=args.show, random_mode=use_random_mode)
         vlcPath = "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe"
         p = subprocess.Popen([vlcPath, episode, "--fullscreen", "--sub-track", "10"])
 
